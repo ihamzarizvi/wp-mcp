@@ -65,7 +65,7 @@ let r = await call("wp_list_sites");
 check("wp_list_sites", r.ok && r.data.length === 5 && !r.text.includes(password));
 
 r = await call("wp_site_info", t());
-check("wp_site_info sees the bridge", r.ok && r.data.bridge?.bridge_version === "0.3.0" && r.data.authenticated_as?.username === "admin", r.text.slice(0, 300));
+check("wp_site_info sees the bridge", r.ok && r.data.bridge?.bridge_version === "0.4.0" && r.data.authenticated_as?.username === "admin", r.text.slice(0, 300));
 
 r = await call("wp_site_info", { site: "plain" });
 check("plain-permalink routing works", r.ok && Array.isArray(r.data.namespaces), r.text.slice(0, 200));
@@ -201,6 +201,57 @@ r = await call("wp_create", { site: "ro", resource: "posts", data: { title: "x" 
 check("read-only site blocks writes", !r.ok && /read-only/.test(r.text));
 r = await call("wp_list", { site: "ro", resource: "posts", status: "any" });
 check("read-only site allows reads", r.ok);
+
+// --- Bricks (the test site has no Bricks theme, so this covers storage and tree editing, not rendering)
+r = await call("wp_create", t({ resource: "pages", data: { title: "Bricks test page", status: "draft" } }));
+const bricksPage = r.data?.id;
+r = await call("bricks_add_elements", t({ id: bricksPage, elements: [{ name: "section", label: "Hero", children: [{ name: "container", children: [{ name: "heading", settings: { text: "Hello \"quoted\" \ world", tag: "h1" } }, { name: "text-basic", settings: { text: "Body" } }] }] }] }));
+check("bricks_add_elements builds a nested section", r.ok && r.data.elements === 4 && r.data.added_ids?.length === 4 && r.data.added?.[0]?.children?.[0]?.children?.length === 2, r.text.slice(0, 400));
+const headingId = r.data?.added?.[0]?.children?.[0]?.children?.[0]?.id;
+const containerId = r.data?.added?.[0]?.children?.[0]?.id;
+r = await call("bricks_get", t({ id: bricksPage }));
+check("bricks_get returns a compact outline", r.ok && r.data.built_with === "bricks" && r.data.element_count === 4 && r.data.outline[0].label === "Hero" && !r.text.includes("\"settings\""), r.text.slice(0, 400));
+r = await call("bricks_update_element", t({ id: bricksPage, element_id: headingId, settings: { text: "Changed" }, label: "Title" }));
+check("bricks_update_element merges settings", r.ok && r.data.element?.settings?.text === "Changed" && r.data.element.settings.tag === "h1" && r.data.element.label === "Title", r.text.slice(0, 400));
+r = await call("bricks_get", t({ id: bricksPage, element_id: headingId }));
+check("bricks_get returns one element in full", r.ok && r.data.elements.length === 1 && r.data.elements[0].settings.text === "Changed" && r.data.undo_available, r.text.slice(0, 400));
+r = await call("bricks_undo", t({ id: bricksPage }));
+r = await call("bricks_get", t({ id: bricksPage, element_id: headingId }));
+check("bricks_undo restores the previous version exactly", r.ok && r.data.elements[0].settings.text === "Hello \"quoted\" \ world", r.text.slice(0, 400));
+r = await call("bricks_add_elements", t({ id: bricksPage, elements: [{ name: "section", label: "CTA", children: [{ name: "button", settings: { text: "Call" } }] }], position: 0 }));
+const ctaId = r.data?.added?.[0]?.id;
+r = await call("bricks_move_element", t({ id: bricksPage, element_id: headingId, parent_id: ctaId, position: 0 }));
+r = await call("bricks_get", t({ id: bricksPage }));
+check("bricks_move_element and root position", r.ok && r.data.outline[0].id === ctaId && r.data.outline[0].children[0].id === headingId && r.data.outline[1].children[0].children.length === 1, r.text.slice(0, 500));
+r = await call("bricks_remove_element", t({ id: bricksPage, element_id: containerId }));
+check("bricks remove needs confirm", !r.ok && /confirm/.test(r.text));
+r = await call("bricks_remove_element", t({ id: bricksPage, element_id: containerId, confirm: true }));
+check("bricks_remove_element removes the subtree", r.ok && r.data.removed_ids.length === 2 && r.data.elements === 4, r.text.slice(0, 300));
+r = await call("bricks_update_element", t({ id: bricksPage, element_id: "zzzzzz", settings: {} }));
+check("unknown Bricks element id is reported", !r.ok && /No element/.test(r.text), r.text.slice(0, 200));
+r = await call("bricks_set", t({ id: bricksPage, confirm: true, elements: [{ id: "aaaaaa", name: "section", parent: 0, children: ["bbbbbb"] }] }));
+check("bricks_set rejects a broken tree", !r.ok && /bbbbbb|does not exist|different parent/.test(r.text), r.text.slice(0, 200));
+r = await call("bricks_get", t({ id: bricksPage, full: true }));
+const copied = r.data.elements;
+r = await call("bricks_set", t({ id: bricksPage, confirm: true, elements: copied }));
+check("bricks_set round-trips a full tree", r.ok && r.data.elements === copied.length, r.text.slice(0, 200));
+r = await call("bricks_templates_list", t());
+check("bricks_templates_list", r.ok && Array.isArray(r.data), r.text.slice(0, 200));
+r = await call("bricks_template_create", t({ title: "X", type: "header" }));
+check("template create explains when Bricks is not active", !r.ok && /wp_mcp_bricks_inactive/.test(r.text), r.text.slice(0, 200));
+r = await call("bricks_global_upsert", t({ what: "classes", item: { name: "mcp-btn", settings: { _cssCustom: ".mcp-btn{color:red}" } } }));
+const classId = r.data?.item?.id;
+check("bricks_global_upsert creates a class", r.ok && r.data.created === true && /^[a-z0-9]{6}$/.test(classId), r.text.slice(0, 300));
+r = await call("bricks_global_upsert", t({ what: "classes", item: { name: "mcp-btn", category: "buttons" } }));
+check("bricks_global_upsert updates by name and keeps settings", r.ok && r.data.created === false && r.data.item.id === classId && r.data.item.settings._cssCustom && r.data.item.category === "buttons", r.text.slice(0, 300));
+r = await call("bricks_globals_get", t({ what: "classes", search: "mcp" }));
+check("bricks_globals_get lists compactly", r.ok && r.data.total === 1 && r.data.items[0].name === "mcp-btn" && r.data.items[0].sets[0] === "_cssCustom" && !r.text.includes("color:red"), r.text.slice(0, 300));
+r = await call("bricks_update_element", t({ id: bricksPage, element_id: ctaId, settings: { _cssGlobalClasses: [classId] } }));
+r = await call("bricks_get", t({ id: bricksPage }));
+check("outline shows global class names", r.ok && r.data.outline[0].classes?.[0] === "mcp-btn", r.text.slice(0, 300));
+r = await call("bricks_global_delete", t({ what: "classes", id: classId, confirm: true }));
+check("bricks_global_delete", r.ok && r.data.deleted === true, r.text.slice(0, 200));
+await call("wp_delete", t({ resource: "pages", id: bricksPage, force: true, confirm: true }));
 
 // --- connection key login
 r = await call("wp_site_info", { site: "key" });

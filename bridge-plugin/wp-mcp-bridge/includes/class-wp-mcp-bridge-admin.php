@@ -271,7 +271,7 @@ final class WP_MCP_Bridge_Admin {
 		<table class="widefat striped">
 			<thead><tr><th>Capability</th><th>Status</th><th>Controlled by</th></tr></thead>
 			<tbody>
-				<tr><td>Content, media, users, menus, plugins, settings, themes, options, post meta, Elementor, cron, cache</td><td><?php echo self::yes_no( $settings['enabled'] && ! $settings['read_only'], 'On', $settings['enabled'] ? 'Read-only' : 'Off' ); // phpcs:ignore WordPress.Security.EscapeOutput ?></td><td>Settings tab</td></tr>
+				<tr><td>Content, media, users, menus, plugins, settings, themes, options, post meta, Elementor, Bricks, cron, cache</td><td><?php echo self::yes_no( $settings['enabled'] && ! $settings['read_only'], 'On', $settings['enabled'] ? 'Read-only' : 'Off' ); // phpcs:ignore WordPress.Security.EscapeOutput ?></td><td>Settings tab</td></tr>
 				<?php
 				$labels = array( 'files' => 'Read and write files in wp-content', 'db' => 'Run SQL on the database', 'cli' => 'Run WP-CLI commands' );
 				foreach ( $labels as $feature => $label ) :
@@ -297,6 +297,7 @@ final class WP_MCP_Bridge_Admin {
 				<tr><th>Permalinks</th><td><?php echo '' === (string) get_option( 'permalink_structure' ) ? 'Plain (the entry above sets plainPermalinks)' : 'Pretty'; ?></td></tr>
 				<tr><th>Application Passwords</th><td><?php echo self::yes_no( $can_app, 'Available', 'Unavailable' ); // phpcs:ignore WordPress.Security.EscapeOutput ?></td></tr>
 				<tr><th>WooCommerce</th><td><?php echo esc_html( defined( 'WC_VERSION' ) ? WC_VERSION : 'Not active' ); ?></td></tr>
+				<tr><th>Bricks</th><td><?php echo esc_html( WP_MCP_Bridge_Bricks::version() ? WP_MCP_Bridge_Bricks::version() : 'Not active' ); ?></td></tr>
 				<tr><th>Elementor</th><td><?php echo esc_html( defined( 'ELEMENTOR_VERSION' ) ? ELEMENTOR_VERSION : 'Not active' ); ?></td></tr>
 				<tr><th>WP-CLI from PHP</th><td><?php echo function_exists( 'proc_open' ) ? 'proc_open available, binary: <code>' . esc_html( defined( 'WP_MCP_CLI_PATH' ) ? WP_MCP_CLI_PATH : 'wp' ) . '</code>' : 'Not possible: this host disables proc_open'; ?></td></tr>
 			</tbody>

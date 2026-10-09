@@ -30,6 +30,9 @@ Every tool except `wp_list_sites` takes a `site` id.
 | Settings | `wp_settings_get`, `wp_settings_update` | no |
 | Options and meta | `wp_option_get`, `wp_option_set`, `wp_postmeta_get`, `wp_postmeta_set` | yes |
 | Elementor | `wp_elementor_get`, `wp_elementor_set` | yes |
+| Bricks pages | `bricks_get`, `bricks_update_element`, `bricks_add_elements`, `bricks_move_element`, `bricks_remove_element`, `bricks_set`, `bricks_undo` | yes |
+| Bricks templates | `bricks_templates_list`, `bricks_template_create` | yes |
+| Bricks globals | `bricks_globals_get`, `bricks_global_upsert`, `bricks_global_delete` (classes, variables; colours, theme styles and more read-only) | yes |
 | Maintenance | `wp_cache_flush`, `wp_cron_list`, `wp_cron_run`, `wp_activity_log` | yes |
 | Files | `wp_file_list`, `wp_file_read`, `wp_file_write` | yes + enabled in its settings |
 | Database | `wp_db_query` | yes + enabled in its settings |
@@ -38,6 +41,10 @@ Every tool except `wp_list_sites` takes a `site` id.
 | Anything else | `wp_rest_request` (any REST route of any plugin) | no |
 
 The six content tools take a `resource` argument and cover posts, pages, media, categories, tags, comments, users, menus (`menus`, `menu-items`), reusable blocks, templates and every custom post type or taxonomy. A resource starting with `/` is used as a full route, e.g. `/wc/v3/products`.
+
+### Bricks Builder
+
+Bricks pages are edited element by element instead of being re-sent whole. `bricks_get` returns a compact outline (ids, element types, labels, text snippets, class names); the agent then reads one element in full, changes it with `bricks_update_element`, or adds, moves and removes elements. Every tree is validated before it is saved, the version before each change is kept so `bricks_undo` can restore it (one level), and CSS files are regenerated on sites that load Bricks CSS from files. Header and footer templates are handled the same way by template id.
 
 ## Setup
 
@@ -153,7 +160,7 @@ and once it reports that WordPress is running, in another:
 npm run test:integration
 ```
 
-The suite drives the built server over stdio and HTTP and exercises content, media, plugins, themes, options, post meta, Elementor data, files, SQL, cron, cache and every guard. It does not cover real WP-CLI execution, WooCommerce, or saving through an active Elementor install; test those on a staging site.
+The suite drives the built server over stdio and HTTP and exercises content, media, plugins, themes, options, post meta, Elementor data, files, SQL, cron, cache and every guard. It does not cover real WP-CLI execution, WooCommerce, saving through an active Elementor install, or how Bricks renders the result (the test site has no Bricks theme, so only storage and tree editing are checked); test those on a staging site.
 
 ## Troubleshooting
 
