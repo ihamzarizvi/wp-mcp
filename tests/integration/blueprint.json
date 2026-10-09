@@ -1,0 +1,15 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "constants": {
+    "WP_ENVIRONMENT_TYPE": "local",
+    "WP_MCP_ALLOW_FILES": true,
+    "WP_MCP_ALLOW_DB": true
+  },
+  "steps": [
+    { "step": "activatePlugin", "pluginPath": "wp-mcp-bridge/wp-mcp-bridge.php" },
+    {
+      "step": "runPHP",
+      "code": "<?php require '/wordpress/wp-load.php'; $created = WP_Application_Passwords::create_new_application_password( 1, array( 'name' => 'wp-mcp-test' ) ); file_put_contents( '/wordpress/wp-content/mcp-out/app-password.txt', $created[0] );"
+    }
+  ]
+}

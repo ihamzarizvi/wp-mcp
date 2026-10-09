@@ -1,0 +1,13 @@
+{
+  "sites": [
+    {
+      "id": "example",
+      "label": "Example site",
+      "url": "https://example.com",
+      "username": "mcp-admin",
+      "appPasswordEnv": "WP_SITE_EXAMPLE_APP_PASSWORD",
+      "readOnly": false,
+      "plainPermalinks": false
+    }
+  ]
+}
