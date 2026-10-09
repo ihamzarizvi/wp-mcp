@@ -67,7 +67,7 @@ export function registerSystemTools(ctx: Ctx): void {
   defineTool(ctx, {
     name: "wp_cli",
     description:
-      'Run a WP-CLI command on the site, e.g. "plugin list --format=json", "search-replace old new --dry-run", "cache flush". Read-only commands run directly; anything else needs confirm: true. Needs WP-CLI on the server and WP_MCP_ALLOW_CLI enabled in wp-config.php.',
+      'Run a WP-CLI command on the site, e.g. "plugin list --format=json", "search-replace old new --dry-run", "cache flush". Read-only commands run directly; anything else needs confirm: true. Needs WP-CLI on the server and WP-CLI access enabled on the site under WP Admin > WP MCP > Settings.',
     schema: { command: z.string().min(1).describe('Command without the leading "wp"') },
     kind: "destructive",
     classify: (a) => classifyCli(a.command),
@@ -81,7 +81,7 @@ export function registerSystemTools(ctx: Ctx): void {
 
   defineTool(ctx, {
     name: "wp_file_list",
-    description: "List a directory inside wp-content (themes, plugins, uploads, mu-plugins). Needs WP_MCP_ALLOW_FILES enabled in wp-config.php.",
+    description: "List a directory inside wp-content (themes, plugins, uploads, mu-plugins). File access must be enabled on the site under WP Admin > WP MCP > Settings.",
     schema: { path: relPath.optional() },
     kind: "read",
     bridge: true,
@@ -90,7 +90,7 @@ export function registerSystemTools(ctx: Ctx): void {
 
   defineTool(ctx, {
     name: "wp_file_read",
-    description: "Read a file inside wp-content. Text is returned as-is; binary files as base64. Needs WP_MCP_ALLOW_FILES.",
+    description: "Read a file inside wp-content. Text is returned as-is; binary files as base64. File access must be enabled on the site under WP Admin > WP MCP > Settings.",
     schema: { path: relPath },
     kind: "read",
     bridge: true,
@@ -100,7 +100,7 @@ export function registerSystemTools(ctx: Ctx): void {
   defineTool(ctx, {
     name: "wp_file_write",
     description:
-      "Create or overwrite a file inside wp-content. A syntax error in an active theme or plugin PHP file can take the site down, so read the file first and keep the change minimal. Needs WP_MCP_ALLOW_FILES.",
+      "Create or overwrite a file inside wp-content. A syntax error in an active theme or plugin PHP file can take the site down, so read the file first and keep the change minimal. File access must be enabled on the site under WP Admin > WP MCP > Settings.",
     schema: {
       path: relPath,
       content: z.string(),
@@ -114,7 +114,7 @@ export function registerSystemTools(ctx: Ctx): void {
   defineTool(ctx, {
     name: "wp_db_query",
     description:
-      "Run one SQL statement against the WordPress database. Use {prefix} for the table prefix, e.g. SELECT * FROM {prefix}posts LIMIT 5. SELECT/SHOW/DESCRIBE/EXPLAIN run directly; any write needs confirm: true. Needs WP_MCP_ALLOW_DB enabled in wp-config.php.",
+      "Run one SQL statement against the WordPress database. Use {prefix} for the table prefix, e.g. SELECT * FROM {prefix}posts LIMIT 5. SELECT/SHOW/DESCRIBE/EXPLAIN run directly; any write needs confirm: true. Database access must be enabled on the site under WP Admin > WP MCP > Settings.",
     schema: { sql: z.string().min(1) },
     kind: "destructive",
     classify: (a) => classifySql(a.sql),
@@ -147,6 +147,21 @@ export function registerSystemTools(ctx: Ctx): void {
     kind: "write",
     bridge: true,
     run: async (wp, a) => (await wp.request("POST", `${BRIDGE}/cron/run`, { body: a, timeoutMs: 180_000 })).data,
+  });
+
+  defineTool(ctx, {
+    name: "wp_activity_log",
+    description:
+      "Read the site's own history of requests made through this server (time, user, method, route, status, parameters), as recorded by the bridge plugin. Changes are always recorded; reads only if the site admin enabled that.",
+    schema: {
+      kind: z.enum(["all", "writes", "errors"]).optional(),
+      search: z.string().optional().describe("Match against route or parameters"),
+      page: z.number().int().min(1).optional(),
+      per_page: z.number().int().min(1).max(200).optional().describe("Default 50"),
+    },
+    kind: "read",
+    bridge: true,
+    run: async (wp, a) => (await wp.get(`${BRIDGE}/log`, a)).data,
   });
 
   defineTool(ctx, {

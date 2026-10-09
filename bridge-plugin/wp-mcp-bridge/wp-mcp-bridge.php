@@ -2,14 +2,15 @@
 /**
  * Plugin Name: WP MCP Bridge
  * Description: Adds the admin REST endpoints the wp-mcp server needs beyond core REST: themes, plugin updates, options, post meta, Elementor, cron, cache, and (off by default) file, database and WP-CLI access.
- * Version: 0.1.0
+ * Version: 0.2.0
  * Author: Hamza Rizvi
  * Author URI: https://hamzarizvi.com
  * Requires at least: 5.6
  * Requires PHP: 7.4
  *
- * Every route requires an administrator (manage_options). The three powerful
- * features are disabled until switched on in wp-config.php:
+ * Every route requires an administrator (manage_options). Access, the three
+ * powerful features and the activity log are managed under WP MCP in WP Admin.
+ * A constant in wp-config.php overrides the matching setting and locks it:
  *
  *   define( 'WP_MCP_ALLOW_FILES', true ); // read/write files under wp-content
  *   define( 'WP_MCP_ALLOW_DB', true );    // run SQL
@@ -21,8 +22,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+define( 'WP_MCP_BRIDGE_FILE', __FILE__ );
+
+require_once __DIR__ . '/includes/class-wp-mcp-bridge-settings.php';
+require_once __DIR__ . '/includes/class-wp-mcp-bridge-logger.php';
+require_once __DIR__ . '/includes/class-wp-mcp-bridge-admin.php';
+
 final class WP_MCP_Bridge {
-	const VERSION        = '0.1.0';
+	const VERSION        = '0.2.0';
 	const NS             = 'wp-mcp/v1';
 	const MAX_FILE_BYTES = 2097152;
 	const MAX_DB_ROWS    = 1000;
@@ -30,6 +37,40 @@ final class WP_MCP_Bridge {
 
 	public static function init() {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
+		add_filter( 'rest_pre_dispatch', array( __CLASS__, 'enforce_access' ), 1, 3 );
+		register_activation_hook( WP_MCP_BRIDGE_FILE, array( 'WP_MCP_Bridge_Logger', 'maybe_install' ) );
+		WP_MCP_Bridge_Logger::init();
+		if ( is_admin() ) {
+			WP_MCP_Bridge_Admin::init();
+		}
+	}
+
+	/**
+	 * True for requests made by the wp-mcp server: anything to this plugin's
+	 * routes, and core REST requests carrying the server's User-Agent.
+	 */
+	public static function is_mcp_request( $request ) {
+		if ( 0 === strpos( $request->get_route(), '/' . self::NS ) ) {
+			return true;
+		}
+		return 0 === stripos( (string) $request->get_header( 'user_agent' ), 'wp-mcp/' );
+	}
+
+	/** Applies the access settings before any MCP request is dispatched. */
+	public static function enforce_access( $result, $server, $request ) {
+		if ( null !== $result || ! self::is_mcp_request( $request ) ) {
+			return $result;
+		}
+		if ( ! WP_MCP_Bridge_Settings::get( 'enabled' ) ) {
+			return self::error( 'wp_mcp_access_off', 'MCP access is switched off for this site (WP Admin > WP MCP > Settings).', 403 );
+		}
+		if ( ! WP_MCP_Bridge_Settings::ip_allowed( WP_MCP_Bridge_Settings::client_ip() ) ) {
+			return self::error( 'wp_mcp_ip_blocked', 'This IP address is not on the allowed list for this site (WP Admin > WP MCP > Settings).', 403 );
+		}
+		if ( WP_MCP_Bridge_Settings::get( 'read_only' ) && ! in_array( $request->get_method(), array( 'GET', 'HEAD', 'OPTIONS' ), true ) ) {
+			return self::error( 'wp_mcp_read_only', 'This site is in read-only mode for MCP (WP Admin > WP MCP > Settings).', 403 );
+		}
+		return $result;
 	}
 
 	public static function can_manage() {
@@ -70,19 +111,19 @@ final class WP_MCP_Bridge {
 		self::route( '/files', 'POST', 'file_write' );
 		self::route( '/db/query', 'POST', 'db_query' );
 		self::route( '/cli', 'POST', 'cli' );
+		self::route( '/log', 'GET', 'log_list' );
 	}
 
-	private static function enabled( $constant ) {
-		return defined( $constant ) && constant( $constant );
-	}
-
-	private static function gate( $constant ) {
-		if ( self::enabled( $constant ) ) {
+	private static function gate( $feature ) {
+		if ( WP_MCP_Bridge_Settings::feature_enabled( $feature ) ) {
 			return true;
 		}
 		return new WP_Error(
 			'wp_mcp_disabled',
-			sprintf( "This feature is disabled on this site. To enable it, add define( '%s', true ); to wp-config.php.", $constant ),
+			sprintf(
+				"This feature is disabled on this site. A site administrator can enable it in WP Admin > WP MCP > Settings, or with define( '%s', true ); in wp-config.php.",
+				WP_MCP_Bridge_Settings::FEATURES[ $feature ]
+			),
 			array( 'status' => 403 )
 		);
 	}
@@ -107,10 +148,11 @@ final class WP_MCP_Bridge {
 			'woocommerce'     => defined( 'WC_VERSION' ) ? WC_VERSION : null,
 			'elementor'       => defined( 'ELEMENTOR_VERSION' ) ? ELEMENTOR_VERSION : null,
 			'features'        => array(
-				'files' => self::enabled( 'WP_MCP_ALLOW_FILES' ),
-				'db'    => self::enabled( 'WP_MCP_ALLOW_DB' ),
-				'cli'   => self::enabled( 'WP_MCP_ALLOW_CLI' ),
+				'files' => WP_MCP_Bridge_Settings::feature_enabled( 'files' ),
+				'db'    => WP_MCP_Bridge_Settings::feature_enabled( 'db' ),
+				'cli'   => WP_MCP_Bridge_Settings::feature_enabled( 'cli' ),
 			),
+			'read_only'       => (bool) WP_MCP_Bridge_Settings::get( 'read_only' ),
 			'pending_updates' => array(
 				'plugins' => isset( $plugin_updates->response ) ? array_keys( (array) $plugin_updates->response ) : array(),
 				'themes'  => isset( $theme_updates->response ) ? array_keys( (array) $theme_updates->response ) : array(),
@@ -282,6 +324,9 @@ final class WP_MCP_Bridge {
 		if ( '' === $name ) {
 			return self::error( 'wp_mcp_bad_request', 'name is required.' );
 		}
+		if ( WP_MCP_Bridge_Settings::is_protected_option( $name ) ) {
+			return self::protected_option_error();
+		}
 		$autoload = $request->get_param( 'autoload' );
 		$changed  = update_option( $name, $request->get_param( 'value' ), null === $autoload ? null : (bool) $autoload );
 		return array( 'name' => $name, 'changed' => $changed, 'value' => get_option( $name ) );
@@ -289,7 +334,33 @@ final class WP_MCP_Bridge {
 
 	public static function option_delete( WP_REST_Request $request ) {
 		$name = (string) $request->get_param( 'name' );
+		if ( WP_MCP_Bridge_Settings::is_protected_option( $name ) ) {
+			return self::protected_option_error();
+		}
 		return array( 'name' => $name, 'deleted' => delete_option( $name ) );
+	}
+
+	/** The agent must not be able to widen its own access. */
+	private static function protected_option_error() {
+		return self::error( 'wp_mcp_protected', 'WP MCP settings can only be changed by an administrator in WP Admin > WP MCP.', 403 );
+	}
+
+	/* ---------------------------------------------------------- activity log */
+
+	public static function log_list( WP_REST_Request $request ) {
+		$result = WP_MCP_Bridge_Logger::query(
+			array(
+				'kind'     => (string) $request->get_param( 'kind' ),
+				'search'   => (string) $request->get_param( 'search' ),
+				'page'     => (int) $request->get_param( 'page' ),
+				'per_page' => $request->get_param( 'per_page' ) ? (int) $request->get_param( 'per_page' ) : 50,
+			)
+		);
+		return array(
+			'total'      => $result['total'],
+			'logs_reads' => (bool) WP_MCP_Bridge_Settings::get( 'log_reads' ),
+			'entries'    => $result['rows'],
+		);
 	}
 
 	/* ------------------------------------------------------------- post meta */
@@ -519,7 +590,7 @@ final class WP_MCP_Bridge {
 	}
 
 	public static function file_get( WP_REST_Request $request ) {
-		$gate = self::gate( 'WP_MCP_ALLOW_FILES' );
+		$gate = self::gate( 'files' );
 		if ( is_wp_error( $gate ) ) {
 			return $gate;
 		}
@@ -567,7 +638,7 @@ final class WP_MCP_Bridge {
 	}
 
 	public static function file_write( WP_REST_Request $request ) {
-		$gate = self::gate( 'WP_MCP_ALLOW_FILES' );
+		$gate = self::gate( 'files' );
 		if ( is_wp_error( $gate ) ) {
 			return $gate;
 		}
@@ -603,7 +674,7 @@ final class WP_MCP_Bridge {
 	/* -------------------------------------------------------------- database */
 
 	public static function db_query( WP_REST_Request $request ) {
-		$gate = self::gate( 'WP_MCP_ALLOW_DB' );
+		$gate = self::gate( 'db' );
 		if ( is_wp_error( $gate ) ) {
 			return $gate;
 		}
@@ -627,6 +698,9 @@ final class WP_MCP_Bridge {
 			);
 		}
 
+		if ( false !== stripos( $sql, 'wp_mcp_bridge_' ) || false !== stripos( $sql, 'wp_mcp_log' ) ) {
+			return self::error( 'wp_mcp_protected', 'WP MCP settings and its activity log cannot be changed with SQL.', 403 );
+		}
 		$affected = $wpdb->query( $sql ); // phpcs:ignore WordPress.DB
 		if ( false === $affected ) {
 			return self::error( 'wp_mcp_db_error', $wpdb->last_error ? $wpdb->last_error : 'Query failed.' );
@@ -637,7 +711,7 @@ final class WP_MCP_Bridge {
 	/* ---------------------------------------------------------------- WP-CLI */
 
 	public static function cli( WP_REST_Request $request ) {
-		$gate = self::gate( 'WP_MCP_ALLOW_CLI' );
+		$gate = self::gate( 'cli' );
 		if ( is_wp_error( $gate ) ) {
 			return $gate;
 		}

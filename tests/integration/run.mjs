@@ -63,7 +63,7 @@ let r = await call("wp_list_sites");
 check("wp_list_sites", r.ok && r.data.length === 3 && !r.text.includes(password));
 
 r = await call("wp_site_info", t());
-check("wp_site_info sees the bridge", r.ok && r.data.bridge?.bridge_version === "0.1.0" && r.data.authenticated_as?.username === "admin", r.text.slice(0, 300));
+check("wp_site_info sees the bridge", r.ok && r.data.bridge?.bridge_version === "0.2.0" && r.data.authenticated_as?.username === "admin", r.text.slice(0, 300));
 
 r = await call("wp_site_info", { site: "plain" });
 check("plain-permalink routing works", r.ok && Array.isArray(r.data.namespaces), r.text.slice(0, 200));
@@ -199,6 +199,17 @@ r = await call("wp_create", { site: "ro", resource: "posts", data: { title: "x" 
 check("read-only site blocks writes", !r.ok && /read-only/.test(r.text));
 r = await call("wp_list", { site: "ro", resource: "posts", status: "any" });
 check("read-only site allows reads", r.ok);
+
+// --- site-side protections and activity log
+r = await call("wp_option_set", t({ name: "wp_mcp_bridge_settings", value: { allow_cli: true } }));
+check("agent cannot change the bridge settings", !r.ok && /wp_mcp_protected/.test(r.text), r.text.slice(0, 200));
+r = await call("wp_db_query", t({ sql: "DELETE FROM {prefix}wp_mcp_log", confirm: true }));
+check("agent cannot wipe the activity log with SQL", !r.ok && /wp_mcp_protected/.test(r.text), r.text.slice(0, 200));
+r = await call("wp_activity_log", t({ kind: "writes", per_page: 200 }));
+check("wp_activity_log records changes", r.ok && r.data.total > 10 && r.data.entries.some((e) => e.method === "POST" && e.route === "/wp/v2/posts" && Number(e.status) === 201), r.text.slice(0, 400));
+check("activity log has no reads by default and no secrets", r.ok && r.data.entries.every((e) => e.method !== "GET") && !r.text.includes(password));
+r = await call("wp_activity_log", t({ kind: "errors" }));
+check("wp_activity_log filters errors", r.ok && r.data.total >= 1 && r.data.entries.every((e) => Number(e.status) >= 400), r.text.slice(0, 300));
 
 // --- cleanup through the tools under test
 r = await call("wp_delete", t({ resource: "posts", id: postId, force: true }));

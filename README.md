@@ -30,10 +30,10 @@ Every tool except `wp_list_sites` takes a `site` id.
 | Settings | `wp_settings_get`, `wp_settings_update` | no |
 | Options and meta | `wp_option_get`, `wp_option_set`, `wp_postmeta_get`, `wp_postmeta_set` | yes |
 | Elementor | `wp_elementor_get`, `wp_elementor_set` | yes |
-| Maintenance | `wp_cache_flush`, `wp_cron_list`, `wp_cron_run` | yes |
-| Files | `wp_file_list`, `wp_file_read`, `wp_file_write` | yes + `WP_MCP_ALLOW_FILES` |
-| Database | `wp_db_query` | yes + `WP_MCP_ALLOW_DB` |
-| WP-CLI | `wp_cli` | yes + `WP_MCP_ALLOW_CLI` |
+| Maintenance | `wp_cache_flush`, `wp_cron_list`, `wp_cron_run`, `wp_activity_log` | yes |
+| Files | `wp_file_list`, `wp_file_read`, `wp_file_write` | yes + enabled in its settings |
+| Database | `wp_db_query` | yes + enabled in its settings |
+| WP-CLI | `wp_cli` | yes + enabled in its settings |
 | WooCommerce | `wc_request` | no (needs WooCommerce) |
 | Anything else | `wp_rest_request` (any REST route of any plugin) | no |
 
@@ -52,15 +52,24 @@ npm run build
 
 1. Create a dedicated administrator user for the agent (so its actions are attributable and revocable).
 2. In **Users > Profile > Application Passwords**, create a password for that user.
-3. Optional: zip `bridge-plugin/wp-mcp-bridge`, upload it in **Plugins > Add New > Upload**, and activate it.
-4. Optional: enable the gated features you want in `wp-config.php`:
+3. Optional: upload `wp-mcp-bridge.zip` (a zip of `bridge-plugin/wp-mcp-bridge`) in **Plugins > Add New > Upload** and activate it.
+
+The plugin adds a **WP MCP** screen to WP Admin with three tabs:
+
+- **Connection**: a button that creates the Application Password, the ready-made `sites.json` entry and `.env` line for this site, the existing Application Passwords with a revoke button, what the agent may do here, and environment checks.
+- **Settings**: switch MCP access off entirely, put the site in read-only mode, restrict access to listed IP addresses, enable file, database and WP-CLI access, and set log retention.
+- **Activity**: every change the wp-mcp server made on this site (time, user, request, result, parameters with secrets redacted), filterable and searchable. Reads are logged too if you turn that on.
+
+The three powerful features are off until enabled on the Settings tab. A constant in `wp-config.php` overrides the matching setting and locks it, for sites where even administrators should not be able to change it:
 
 ```php
-define( 'WP_MCP_ALLOW_FILES', true ); // read/write files under wp-content
-define( 'WP_MCP_ALLOW_DB', true );    // run SQL
-define( 'WP_MCP_ALLOW_CLI', true );   // run WP-CLI (host must allow proc_open)
-define( 'WP_MCP_CLI_PATH', '/usr/local/bin/wp' ); // optional
+define( 'WP_MCP_ALLOW_FILES', false );
+define( 'WP_MCP_ALLOW_DB', false );
+define( 'WP_MCP_ALLOW_CLI', false );
+define( 'WP_MCP_CLI_PATH', '/usr/local/bin/wp' ); // optional, default "wp"
 ```
+
+In site read-only mode every non-GET request is refused, which includes `wp_cli` and `wp_db_query` even for read-only commands, since both are sent as POST.
 
 ### 3. Register the sites
 
@@ -119,7 +128,7 @@ Any other MCP client works with one of the two forms above: the stdio command, o
 - `readOnly` sites reject every write tool.
 - Destructive calls (deletes, file writes, SQL writes, non-read WP-CLI commands) are refused unless the call includes `confirm: true`. This is a prompt for the agent to ask you, not a security boundary.
 - Every write, including blocked ones, is appended to `logs/audit.jsonl` with secrets redacted.
-- The bridge requires the `manage_options` capability on every route, confines file access to `wp-content` (symlinks included), and keeps file, database and WP-CLI access off until enabled in `wp-config.php`.
+- The bridge requires the `manage_options` capability on every route, confines file access to `wp-content` (symlinks included), keeps file, database and WP-CLI access off until an administrator enables them, and refuses any attempt by the agent to change the plugin's own settings or activity log.
 - The HTTP transport will not start without a token of at least 16 characters and binds to localhost by default.
 
 An agent with these tools can break a site. Start with `readOnly: true`, use a staging copy for theme, file and database work, and keep backups.
@@ -149,4 +158,5 @@ The suite drives the built server over stdio and HTTP and exercises content, med
 - **401 on every call**: wrong username or Application Password, or the host strips the `Authorization` header (run `wp_site_health` with the `authorization-header` test).
 - **Non-JSON response**: a firewall or security plugin is blocking the REST API, or the site needs `"plainPermalinks": true`.
 - **"needs the wp-mcp-bridge plugin"**: install and activate the bridge on that site.
-- **`wp_mcp_disabled`**: add the named constant to that site's `wp-config.php`.
+- **`wp_mcp_disabled`**: enable that feature under WP Admin > WP MCP > Settings on that site.
+- **`wp_mcp_access_off`, `wp_mcp_read_only`, `wp_mcp_ip_blocked`**: the site's own WP MCP settings are refusing the request.

@@ -20,7 +20,7 @@
     "start:http": "node dist/index.js --http",
     "test": "vitest run",
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
-    "test:site": "npx -y @wp-playground/cli@3.0.22 server --port=9400 --blueprint=tests/integration/blueprint.json --mount-dir ./bridge-plugin/wp-mcp-bridge /wordpress/wp-content/plugins/wp-mcp-bridge --mount-dir ./.playground/out /wordpress/wp-content/mcp-out",
+    "test:site": "npx -y @wp-playground/cli@3.0.22 server --port=9400 --login --blueprint=tests/integration/blueprint.json --mount-dir ./bridge-plugin/wp-mcp-bridge /wordpress/wp-content/plugins/wp-mcp-bridge --mount-dir ./.playground/out /wordpress/wp-content/mcp-out",
     "test:integration": "node tests/integration/run.mjs"
   },
   "keywords": [
