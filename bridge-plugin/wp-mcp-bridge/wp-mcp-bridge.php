@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP MCP Bridge
  * Description: Adds the admin REST endpoints the wp-mcp server needs beyond core REST: themes, plugin updates, options, post meta, Elementor, cron, cache, and (off by default) file, database and WP-CLI access.
- * Version: 0.2.0
+ * Version: 0.3.0
  * Author: Hamza Rizvi
  * Author URI: https://hamzarizvi.com
  * Requires at least: 5.6
@@ -25,11 +25,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'WP_MCP_BRIDGE_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-wp-mcp-bridge-settings.php';
+require_once __DIR__ . '/includes/class-wp-mcp-bridge-keys.php';
 require_once __DIR__ . '/includes/class-wp-mcp-bridge-logger.php';
 require_once __DIR__ . '/includes/class-wp-mcp-bridge-admin.php';
 
 final class WP_MCP_Bridge {
-	const VERSION        = '0.2.0';
+	const VERSION        = '0.3.0';
 	const NS             = 'wp-mcp/v1';
 	const MAX_FILE_BYTES = 2097152;
 	const MAX_DB_ROWS    = 1000;
@@ -39,6 +40,7 @@ final class WP_MCP_Bridge {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 		add_filter( 'rest_pre_dispatch', array( __CLASS__, 'enforce_access' ), 1, 3 );
 		register_activation_hook( WP_MCP_BRIDGE_FILE, array( 'WP_MCP_Bridge_Logger', 'maybe_install' ) );
+		WP_MCP_Bridge_Keys::init();
 		WP_MCP_Bridge_Logger::init();
 		if ( is_admin() ) {
 			WP_MCP_Bridge_Admin::init();
@@ -47,10 +49,11 @@ final class WP_MCP_Bridge {
 
 	/**
 	 * True for requests made by the wp-mcp server: anything to this plugin's
-	 * routes, and core REST requests carrying the server's User-Agent.
+	 * routes, anything presenting a connection key, and core REST requests
+	 * carrying the server's User-Agent.
 	 */
 	public static function is_mcp_request( $request ) {
-		if ( 0 === strpos( $request->get_route(), '/' . self::NS ) ) {
+		if ( WP_MCP_Bridge_Keys::presented() || 0 === strpos( $request->get_route(), '/' . self::NS ) ) {
 			return true;
 		}
 		return 0 === stripos( (string) $request->get_header( 'user_agent' ), 'wp-mcp/' );

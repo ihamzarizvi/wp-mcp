@@ -62,16 +62,19 @@ export function buildUrl(site: Pick<Site, "url" | "plainPermalinks">, route: str
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class WpClient {
-  private readonly auth: string;
+  private readonly authHeaders: Record<string, string>;
 
   constructor(readonly site: Site) {
-    this.auth = "Basic " + Buffer.from(`${site.username}:${site.appPassword}`).toString("base64");
+    this.authHeaders =
+      site.auth.type === "key"
+        ? { "X-WP-MCP-Key": site.auth.key }
+        : { Authorization: "Basic " + Buffer.from(`${site.auth.username}:${site.auth.password}`).toString("base64") };
   }
 
   async request<T = unknown>(method: HttpMethod, route: string, opts: RequestOptions = {}): Promise<WpResponse<T>> {
     const url = buildUrl(this.site, route, opts.query);
     const headers: Record<string, string> = {
-      Authorization: this.auth,
+      ...this.authHeaders,
       Accept: "application/json",
       "User-Agent": "wp-mcp/0.1",
       ...opts.headers,

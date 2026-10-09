@@ -13,7 +13,17 @@ const site = { id: "a", url: "https://example.com/", username: "u", appPasswordE
 describe("config", () => {
   it("resolves the password from env and trims the trailing slash", () => {
     const s = parseSites({ sites: [site] }, { PW: "secret" }).get("a");
-    expect(s).toMatchObject({ url: "https://example.com", appPassword: "secret", readOnly: false });
+    expect(s).toMatchObject({ url: "https://example.com", auth: { type: "basic", username: "u", password: "secret" }, readOnly: false });
+  });
+  it("accepts a connection key over https or localhost only", () => {
+    const key = (url: string) => parseSites({ sites: [{ id: "k", url, keyEnv: "K" }] }, { K: "wpmcp_x" });
+    expect(key("https://example.com").get("k").auth).toEqual({ type: "key", key: "wpmcp_x" });
+    expect(key("http://127.0.0.1:9400").get("k").auth.type).toBe("key");
+    expect(() => key("http://example.com")).toThrow(/https/);
+  });
+  it("requires exactly one auth method", () => {
+    expect(() => parseSites({ sites: [{ id: "a", url: "https://x.com" }] }, {})).toThrow(/keyEnv/);
+    expect(() => parseSites({ sites: [{ ...site, keyEnv: "K" }] }, { PW: "x", K: "y" })).toThrow(/keyEnv/);
   });
   it("fails when the env var is missing", () => {
     expect(() => parseSites({ sites: [site] }, {})).toThrow(/PW is not set/);

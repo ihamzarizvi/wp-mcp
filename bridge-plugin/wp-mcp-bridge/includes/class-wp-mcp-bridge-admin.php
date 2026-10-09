@@ -17,6 +17,9 @@ final class WP_MCP_Bridge_Admin {
 	/** A just-created Application Password, shown once and never stored by the plugin. */
 	private static $new_password = null;
 
+	/** A just-created connection key, shown once; only its hash is stored. */
+	private static $new_key = null;
+
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( WP_MCP_BRIDGE_FILE ), array( __CLASS__, 'action_links' ) );
@@ -69,6 +72,12 @@ final class WP_MCP_Bridge_Admin {
 			} else {
 				self::$new_password = WP_Application_Passwords::chunk_password( $made[0] );
 			}
+		} elseif ( 'new_key' === $action ) {
+			$name          = isset( $_POST['key_name'] ) ? sanitize_text_field( wp_unslash( $_POST['key_name'] ) ) : '';
+			self::$new_key = WP_MCP_Bridge_Keys::create( $user->ID, $name );
+		} elseif ( 'revoke_key' === $action ) {
+			$revoked      = WP_MCP_Bridge_Keys::revoke( isset( $_POST['key_id'] ) ? sanitize_key( wp_unslash( $_POST['key_id'] ) ) : '' );
+			self::$notice = $revoked ? array( 'success', 'Connection key revoked. Anything using it can no longer connect.' ) : array( 'error', 'That connection key no longer exists.' );
 		} elseif ( 'revoke_password' === $action ) {
 			$uuid   = isset( $_POST['uuid'] ) ? sanitize_text_field( wp_unslash( $_POST['uuid'] ) ) : '';
 			$result = WP_Application_Passwords::delete_application_password( $user->ID, $uuid );
@@ -147,15 +156,11 @@ final class WP_MCP_Bridge_Admin {
 		$env_name = 'WP_SITE_' . strtoupper( str_replace( '-', '_', $site_id ) ) . '_APP_PASSWORD';
 		$can_app  = wp_is_application_passwords_available_for_user( $user );
 
-		$entry = array(
-			'id'             => $site_id,
-			'url'            => untrailingslashit( home_url() ),
-			'username'       => $user->user_login,
-			'appPasswordEnv' => $env_name,
-		);
-		if ( '' === (string) get_option( 'permalink_structure' ) ) {
-			$entry['plainPermalinks'] = true;
-		}
+		$key_env  = 'WP_SITE_' . strtoupper( str_replace( '-', '_', $site_id ) ) . '_KEY';
+		$plain    = '' === (string) get_option( 'permalink_structure' ) ? array( 'plainPermalinks' => true ) : array();
+		$base     = array( 'id' => $site_id, 'url' => untrailingslashit( home_url() ) );
+		$entry     = array_merge( $base, array( 'keyEnv' => $key_env ), $plain );
+		$app_entry = array_merge( $base, array( 'username' => $user->user_login, 'appPasswordEnv' => $env_name ), $plain );
 
 		if ( ! $settings['enabled'] ) {
 			echo '<div class="notice notice-error inline"><p><strong>MCP access is switched off.</strong> Every request from the wp-mcp server is refused until you turn it back on under Settings.</p></div>';
@@ -172,19 +177,16 @@ final class WP_MCP_Bridge_Admin {
 		<p class="description"><?php echo $settings['log_reads'] ? 'Every request from the wp-mcp server is logged.' : 'Only changes are logged. Turn on "Log read requests" under Settings to log everything.'; ?></p>
 
 		<h2>Connect this site to the wp-mcp server</h2>
-		<?php if ( ! $can_app ) : ?>
-			<div class="notice notice-error inline"><p>Application Passwords are not available for your user on this site. They need HTTPS (or a local environment) and must not be disabled by a security plugin or the host. The wp-mcp server cannot log in without one.</p></div>
-		<?php endif; ?>
 		<ol class="wp-mcp-steps">
 			<li>
-				<strong>Create an Application Password</strong> for <code><?php echo esc_html( $user->user_login ); ?></code>. Use a dedicated administrator account for the agent if you can, so its actions are easy to trace and revoke.
-				<?php if ( self::$new_password ) : ?>
+				<strong>Create a connection key.</strong> The wp-mcp server uses it to act on this site as <code><?php echo esc_html( $user->user_login ); ?></code>. Use a dedicated administrator account for the agent if you can, so its actions are easy to trace and revoke.
+				<?php if ( self::$new_key ) : ?>
 					<div class="notice notice-success inline"><p><strong>Copy this now. It will not be shown again.</strong> Put this line in the <code>.env</code> file of the wp-mcp server:</p>
-					<pre><?php echo esc_html( $env_name . '="' . self::$new_password . '"' ); ?></pre></div>
-				<?php elseif ( $can_app ) : ?>
-					<?php self::form_open( 'new_password', 'style="margin-top:8px"' ); ?>
-						<input type="text" name="app_name" value="wp-mcp" class="regular-text" aria-label="Application Password name">
-						<button class="button button-primary">Create Application Password</button>
+					<pre><?php echo esc_html( $key_env . '="' . self::$new_key . '"' ); ?></pre></div>
+				<?php else : ?>
+					<?php self::form_open( 'new_key', 'style="margin-top:8px"' ); ?>
+						<input type="text" name="key_name" value="wp-mcp" class="regular-text" aria-label="Connection key name">
+						<button class="button button-primary">Create connection key</button>
 					</form>
 				<?php endif; ?>
 			</li>
@@ -192,29 +194,28 @@ final class WP_MCP_Bridge_Admin {
 				<strong>Add this entry</strong> to the <code>sites</code> list in <code>sites.json</code> on the machine running the wp-mcp server:
 				<pre><?php echo esc_html( wp_json_encode( $entry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ); ?></pre>
 			</li>
-			<li>
-				<strong>Add the password</strong> to the server's <code>.env</code> file, then restart your MCP client:
-				<pre><?php echo esc_html( $env_name . '="xxxx xxxx xxxx xxxx xxxx xxxx"' ); ?></pre>
-			</li>
+			<li><strong>Restart your MCP client</strong> so it picks up the new site.</li>
 		</ol>
 
-		<h2>Application Passwords for <?php echo esc_html( $user->user_login ); ?></h2>
-		<?php $passwords = WP_Application_Passwords::get_user_application_passwords( $user->ID ); ?>
-		<?php if ( empty( $passwords ) ) : ?>
+		<h2>Connection keys</h2>
+		<?php $keys = WP_MCP_Bridge_Keys::all(); ?>
+		<?php if ( empty( $keys ) ) : ?>
 			<p>None yet.</p>
 		<?php else : ?>
 			<table class="widefat striped">
-				<thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>Last IP</th><th></th></tr></thead>
+				<thead><tr><th>Name</th><th>Acts as</th><th>Created</th><th>Last used</th><th>Last IP</th><th></th></tr></thead>
 				<tbody>
-				<?php foreach ( $passwords as $item ) : ?>
+				<?php foreach ( $keys as $key_id => $item ) : ?>
+					<?php $owner = get_userdata( (int) $item['user_id'] ); ?>
 					<tr>
-						<td><?php echo esc_html( $item['name'] ); ?></td>
+						<td><?php echo esc_html( $item['name'] ); ?> <span class="description">(wpmcp_<?php echo esc_html( $key_id ); ?>_&hellip;)</span></td>
+						<td><?php echo esc_html( $owner ? $owner->user_login : 'deleted user' ); ?></td>
 						<td><?php echo esc_html( self::when( $item['created'] ) ); ?></td>
 						<td><?php echo esc_html( self::when( $item['last_used'] ) ); ?></td>
 						<td><?php echo esc_html( $item['last_ip'] ? $item['last_ip'] : '-' ); ?></td>
 						<td>
-							<?php self::form_open( 'revoke_password', 'onsubmit="return confirm(\'Revoke this Application Password? Anything using it will stop working.\')"' ); ?>
-								<input type="hidden" name="uuid" value="<?php echo esc_attr( $item['uuid'] ); ?>">
+							<?php self::form_open( 'revoke_key', 'onsubmit="return confirm(\'Revoke this connection key? Anything using it will stop working.\')"' ); ?>
+								<input type="hidden" name="key_id" value="<?php echo esc_attr( $key_id ); ?>">
 								<button class="button button-link-delete">Revoke</button>
 							</form>
 						</td>
@@ -222,6 +223,48 @@ final class WP_MCP_Bridge_Admin {
 				<?php endforeach; ?>
 				</tbody>
 			</table>
+		<?php endif; ?>
+
+		<h2>Alternative: WordPress Application Password</h2>
+		<?php if ( ! $can_app ) : ?>
+			<p>Application Passwords are not available on this site (a security plugin, the host or a missing HTTPS signal has disabled them). That is fine: connection keys do not depend on them.</p>
+		<?php else : ?>
+			<details<?php echo self::$new_password ? ' open' : ''; ?>>
+				<summary>Use an Application Password instead of a connection key</summary>
+				<?php if ( self::$new_password ) : ?>
+					<div class="notice notice-success inline"><p><strong>Copy this now. It will not be shown again.</strong> Put this line in the <code>.env</code> file of the wp-mcp server:</p>
+					<pre><?php echo esc_html( $env_name . '="' . self::$new_password . '"' ); ?></pre></div>
+				<?php else : ?>
+					<?php self::form_open( 'new_password', 'style="margin-top:8px"' ); ?>
+						<input type="text" name="app_name" value="wp-mcp" class="regular-text" aria-label="Application Password name">
+						<button class="button">Create Application Password</button>
+					</form>
+				<?php endif; ?>
+				<p>Use this <code>sites.json</code> entry with it:</p>
+				<pre><?php echo esc_html( wp_json_encode( $app_entry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ); ?></pre>
+				<?php $passwords = WP_Application_Passwords::get_user_application_passwords( $user->ID ); ?>
+				<?php if ( ! empty( $passwords ) ) : ?>
+					<table class="widefat striped">
+						<thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>Last IP</th><th></th></tr></thead>
+						<tbody>
+						<?php foreach ( $passwords as $item ) : ?>
+							<tr>
+								<td><?php echo esc_html( $item['name'] ); ?></td>
+								<td><?php echo esc_html( self::when( $item['created'] ) ); ?></td>
+								<td><?php echo esc_html( self::when( $item['last_used'] ) ); ?></td>
+								<td><?php echo esc_html( $item['last_ip'] ? $item['last_ip'] : '-' ); ?></td>
+								<td>
+									<?php self::form_open( 'revoke_password', 'onsubmit="return confirm(\'Revoke this Application Password? Anything using it will stop working.\')"' ); ?>
+										<input type="hidden" name="uuid" value="<?php echo esc_attr( $item['uuid'] ); ?>">
+										<button class="button button-link-delete">Revoke</button>
+									</form>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+						</tbody>
+					</table>
+				<?php endif; ?>
+			</details>
 		<?php endif; ?>
 
 		<h2>What the agent can do here</h2>

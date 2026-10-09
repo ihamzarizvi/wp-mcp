@@ -2,11 +2,17 @@
   "sites": [
     {
       "id": "example",
-      "label": "Example site",
+      "label": "Example site (connection key from the bridge plugin)",
       "url": "https://example.com",
+      "keyEnv": "WP_SITE_EXAMPLE_KEY",
+      "readOnly": false
+    },
+    {
+      "id": "example2",
+      "label": "Example site (WordPress Application Password, no plugin needed)",
+      "url": "https://example.org",
       "username": "mcp-admin",
-      "appPasswordEnv": "WP_SITE_EXAMPLE_APP_PASSWORD",
-      "readOnly": false,
+      "appPasswordEnv": "WP_SITE_EXAMPLE2_APP_PASSWORD",
       "plainPermalinks": false
     }
   ]

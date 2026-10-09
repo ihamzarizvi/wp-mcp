@@ -25,11 +25,13 @@ writeFileSync(
       { id: "test", ...base },
       { id: "plain", ...base, plainPermalinks: true },
       { id: "ro", ...base, readOnly: true },
+      { id: "key", url: siteUrl, keyEnv: "WP_TEST_KEY" },
+      { id: "badkey", url: siteUrl, keyEnv: "WP_TEST_BAD_KEY" },
     ],
   }),
 );
 
-const env = { ...process.env, WP_MCP_SITES: sitesPath, WP_TEST_APP_PASSWORD: password, WP_MCP_LOG_DIR: logDir };
+const env = { ...process.env, WP_MCP_SITES: sitesPath, WP_TEST_APP_PASSWORD: password, WP_TEST_KEY: readFileSync(resolve(work, "out/key.txt"), "utf8").trim(), WP_TEST_BAD_KEY: "wpmcp_abcdefgh_" + "x".repeat(40), WP_MCP_LOG_DIR: logDir };
 const entry = resolve(root, "dist/index.js");
 
 let passed = 0;
@@ -60,10 +62,10 @@ check("tools are registered", tools.length >= 35, `got ${tools.length}`);
 console.log(`      ${tools.length} tools: ${tools.map((x) => x.name).join(", ")}`);
 
 let r = await call("wp_list_sites");
-check("wp_list_sites", r.ok && r.data.length === 3 && !r.text.includes(password));
+check("wp_list_sites", r.ok && r.data.length === 5 && !r.text.includes(password));
 
 r = await call("wp_site_info", t());
-check("wp_site_info sees the bridge", r.ok && r.data.bridge?.bridge_version === "0.2.0" && r.data.authenticated_as?.username === "admin", r.text.slice(0, 300));
+check("wp_site_info sees the bridge", r.ok && r.data.bridge?.bridge_version === "0.3.0" && r.data.authenticated_as?.username === "admin", r.text.slice(0, 300));
 
 r = await call("wp_site_info", { site: "plain" });
 check("plain-permalink routing works", r.ok && Array.isArray(r.data.namespaces), r.text.slice(0, 200));
@@ -199,6 +201,17 @@ r = await call("wp_create", { site: "ro", resource: "posts", data: { title: "x" 
 check("read-only site blocks writes", !r.ok && /read-only/.test(r.text));
 r = await call("wp_list", { site: "ro", resource: "posts", status: "any" });
 check("read-only site allows reads", r.ok);
+
+// --- connection key login
+r = await call("wp_site_info", { site: "key" });
+check("connection key logs in as its owner", r.ok && r.data.authenticated_as?.username === "admin", r.text.slice(0, 300));
+r = await call("wp_option_set", { site: "key", name: "mcp_key_test", value: "1" });
+check("connection key can write", r.ok && r.data.value === "1", r.text.slice(0, 200));
+await call("wp_option_set", { site: "key", name: "mcp_key_test", delete: true, confirm: true });
+r = await call("wp_site_info", { site: "badkey" });
+check("a wrong connection key is rejected clearly", !r.ok && /wp_mcp_invalid_key/.test(r.text), r.text.slice(0, 200));
+r = await call("wp_option_set", t({ name: "wp_mcp_bridge_keys", value: {} }));
+check("agent cannot touch the stored keys", !r.ok && /wp_mcp_protected/.test(r.text), r.text.slice(0, 200));
 
 // --- site-side protections and activity log
 r = await call("wp_option_set", t({ name: "wp_mcp_bridge_settings", value: { allow_cli: true } }));

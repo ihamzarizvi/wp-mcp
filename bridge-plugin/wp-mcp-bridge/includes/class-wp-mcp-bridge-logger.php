@@ -116,7 +116,7 @@ final class WP_MCP_Bridge_Logger {
 			array(
 				'created_at'  => current_time( 'mysql', true ),
 				'user_id'     => get_current_user_id(),
-				'app_name'    => substr( self::$app_name, 0, 190 ),
+				'app_name'    => substr( '' !== self::$app_name ? self::$app_name : WP_MCP_Bridge_Keys::used_name(), 0, 190 ),
 				'method'      => $method,
 				'route'       => substr( $request->get_route(), 0, 255 ),
 				'status'      => $status,

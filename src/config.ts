@@ -14,8 +14,10 @@ const siteSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/i, "id may only contain letters, digits, - and _"),
   label: z.string().optional(),
   url: z.string().url(),
-  username: z.string().min(1),
-  appPasswordEnv: z.string().min(1),
+  // Either a bridge connection key, or a WordPress username + Application Password.
+  keyEnv: z.string().min(1).optional(),
+  username: z.string().min(1).optional(),
+  appPasswordEnv: z.string().min(1).optional(),
   readOnly: z.boolean().default(false),
   plainPermalinks: z.boolean().default(false),
 });
@@ -26,8 +28,7 @@ export interface Site {
   id: string;
   label?: string;
   url: string;
-  username: string;
-  appPassword: string;
+  auth: { type: "key"; key: string } | { type: "basic"; username: string; password: string };
   readOnly: boolean;
   plainPermalinks: boolean;
 }
@@ -57,20 +58,27 @@ export class SiteRegistry {
 
 export function parseSites(raw: unknown, env: NodeJS.ProcessEnv = process.env): SiteRegistry {
   const parsed = fileSchema.parse(raw);
-  const sites = parsed.sites.map((s) => {
-    const appPassword = env[s.appPasswordEnv];
-    if (!appPassword) {
-      throw new Error(`Site "${s.id}": environment variable ${s.appPasswordEnv} is not set`);
-    }
-    return {
-      id: s.id,
-      label: s.label,
-      url: s.url.replace(/\/+$/, ""),
-      username: s.username,
-      appPassword,
-      readOnly: s.readOnly,
-      plainPermalinks: s.plainPermalinks,
+  const sites = parsed.sites.map((s): Site => {
+    const secret = (name: string) => {
+      const value = env[name];
+      if (!value) throw new Error(`Site "${s.id}": environment variable ${name} is not set`);
+      return value;
     };
+    const url = s.url.replace(/\/+$/, "");
+    let auth: Site["auth"];
+    if (s.keyEnv && !s.appPasswordEnv) {
+      // A connection key is a bearer secret, so it must not travel in clear text.
+      const { protocol, hostname } = new URL(url);
+      if (protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(hostname)) {
+        throw new Error(`Site "${s.id}": a connection key requires an https:// URL`);
+      }
+      auth = { type: "key", key: secret(s.keyEnv) };
+    } else if (s.username && s.appPasswordEnv && !s.keyEnv) {
+      auth = { type: "basic", username: s.username, password: secret(s.appPasswordEnv) };
+    } else {
+      throw new Error(`Site "${s.id}": set either keyEnv, or username and appPasswordEnv`);
+    }
+    return { id: s.id, label: s.label, url, auth, readOnly: s.readOnly, plainPermalinks: s.plainPermalinks };
   });
   return new SiteRegistry(sites);
 }

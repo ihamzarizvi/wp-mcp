@@ -9,7 +9,7 @@
     { "step": "activatePlugin", "pluginPath": "wp-mcp-bridge/wp-mcp-bridge.php" },
     {
       "step": "runPHP",
-      "code": "<?php require '/wordpress/wp-load.php'; $created = WP_Application_Passwords::create_new_application_password( 1, array( 'name' => 'wp-mcp-test' ) ); file_put_contents( '/wordpress/wp-content/mcp-out/app-password.txt', $created[0] );"
+      "code": "<?php require '/wordpress/wp-load.php'; $created = WP_Application_Passwords::create_new_application_password( 1, array( 'name' => 'wp-mcp-test' ) ); file_put_contents( '/wordpress/wp-content/mcp-out/key.txt', WP_MCP_Bridge_Keys::create( 1, 'wp-mcp-test-key' ) ); file_put_contents( '/wordpress/wp-content/mcp-out/app-password.txt', $created[0] );"
     }
   ]
 }

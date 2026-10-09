@@ -50,13 +50,15 @@ npm run build
 
 ### 2. Prepare each WordPress site
 
-1. Create a dedicated administrator user for the agent (so its actions are attributable and revocable).
-2. In **Users > Profile > Application Passwords**, create a password for that user.
-3. Optional: upload `wp-mcp-bridge.zip` (a zip of `bridge-plugin/wp-mcp-bridge`) in **Plugins > Add New > Upload** and activate it.
+There are two ways to log in to a site. Pick one per site.
+
+**Connection key (recommended).** Upload `wp-mcp-bridge.zip` (a zip of `bridge-plugin/wp-mcp-bridge`) in **Plugins > Add New > Upload**, activate it, open **WP MCP** in the admin menu and click **Create connection key**. The page shows the `.env` line and the `sites.json` entry to copy. Keys work on hosts where Application Passwords are disabled or the `Authorization` header is stripped, act as the administrator who created them, are stored only as a hash, and can be revoked from the same page.
+
+**Application Password.** Works without the plugin (core REST tools only). Create one under **Users > Profile > Application Passwords** for a dedicated administrator, and use `username` plus `appPasswordEnv` in `sites.json`.
 
 The plugin adds a **WP MCP** screen to WP Admin with three tabs:
 
-- **Connection**: a button that creates the Application Password, the ready-made `sites.json` entry and `.env` line for this site, the existing Application Passwords with a revoke button, what the agent may do here, and environment checks.
+- **Connection**: a button that creates a connection key, the ready-made `sites.json` entry and `.env` line for this site, the existing keys with a revoke button, the Application Password alternative, what the agent may do here, and environment checks.
 - **Settings**: switch MCP access off entirely, put the site in read-only mode, restrict access to listed IP addresses, enable file, database and WP-CLI access, and set log retention.
 - **Activity**: every change the wp-mcp server made on this site (time, user, request, result, parameters with secrets redacted), filterable and searchable. Reads are logged too if you turn that on.
 
@@ -78,13 +80,13 @@ Copy `sites.example.json` to `sites.json` and `.env.example` to `.env`. Both are
 ```json
 {
   "sites": [
-    { "id": "shop", "url": "https://shop.example.com", "username": "mcp-admin", "appPasswordEnv": "WP_SITE_SHOP_APP_PASSWORD" },
+    { "id": "shop", "url": "https://shop.example.com", "keyEnv": "WP_SITE_SHOP_KEY" },
     { "id": "blog", "url": "https://blog.example.com", "username": "mcp-admin", "appPasswordEnv": "WP_SITE_BLOG_APP_PASSWORD", "readOnly": true }
   ]
 }
 ```
 
-Passwords live only in `.env` (or the client's `env` block), keyed by `appPasswordEnv`. Per-site options: `readOnly` blocks every write; `plainPermalinks` uses `?rest_route=` for sites without pretty permalinks.
+Secrets live only in `.env` (or the client's `env` block), keyed by `keyEnv` or `appPasswordEnv`. A connection key is only accepted for `https://` sites (or localhost). Per-site options: `readOnly` blocks every write; `plainPermalinks` uses `?rest_route=` for sites without pretty permalinks.
 
 ### 4. Connect a client
 
@@ -155,7 +157,8 @@ The suite drives the built server over stdio and HTTP and exercises content, med
 
 ## Troubleshooting
 
-- **401 on every call**: wrong username or Application Password, or the host strips the `Authorization` header (run `wp_site_health` with the `authorization-header` test).
+- **401 on every call**: the site has Application Passwords disabled (many security plugins do this) or the host strips the `Authorization` header. Switch that site to a connection key.
+- **`wp_mcp_invalid_key`**: the key was revoked or mistyped; create a new one under WP Admin > WP MCP.
 - **Non-JSON response**: a firewall or security plugin is blocking the REST API, or the site needs `"plainPermalinks": true`.
 - **"needs the wp-mcp-bridge plugin"**: install and activate the bridge on that site.
 - **`wp_mcp_disabled`**: enable that feature under WP Admin > WP MCP > Settings on that site.

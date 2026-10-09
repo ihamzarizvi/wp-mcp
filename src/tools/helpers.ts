@@ -36,7 +36,7 @@ function describeError(err: unknown, site: string, bridge: boolean): string {
     }
     const hint =
       err.status === 401
-        ? " Check the username and Application Password for this site, and that the host passes the Authorization header."
+        ? " Check this site's connection key (or username and Application Password). If Application Passwords are disabled on the site or the host strips the Authorization header, use a connection key from WP Admin > WP MCP instead."
         : "";
     return `WordPress error [${err.code}, HTTP ${err.status}]: ${err.message}${hint}`;
   }

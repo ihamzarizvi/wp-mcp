@@ -8,3 +8,4 @@ global $wpdb;
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}wp_mcp_log" ); // phpcs:ignore WordPress.DB
 delete_option( 'wp_mcp_bridge_settings' );
 delete_option( 'wp_mcp_bridge_db_version' );
+delete_option( 'wp_mcp_bridge_keys' );
