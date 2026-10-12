@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP MCP Bridge
  * Description: Adds the admin REST endpoints the wp-mcp server needs beyond core REST: themes, plugin updates, options, post meta, Elementor, cron, cache, and (off by default) file, database and WP-CLI access.
- * Version: 0.4.0
+ * Version: 0.4.1
  * Author: Hamza Rizvi
  * Author URI: https://hamzarizvi.com
  * Requires at least: 5.6
@@ -31,7 +31,7 @@ require_once __DIR__ . '/includes/class-wp-mcp-bridge-admin.php';
 require_once __DIR__ . '/includes/class-wp-mcp-bridge-bricks.php';
 
 final class WP_MCP_Bridge {
-	const VERSION        = '0.4.0';
+	const VERSION        = '0.4.1';
 	const NS             = 'wp-mcp/v1';
 	const MAX_FILE_BYTES = 2097152;
 	const MAX_DB_ROWS    = 1000;

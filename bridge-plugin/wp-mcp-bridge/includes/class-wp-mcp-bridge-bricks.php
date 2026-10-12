@@ -388,6 +388,8 @@ final class WP_MCP_Bridge_Bricks {
 		$full   = (bool) $request->get_param( 'full' ) || '' !== $id;
 		$items  = array();
 		$total  = 0;
+		$offset = max( 0, (int) $request->get_param( 'offset' ) );
+		$limit  = $request->get_param( 'limit' ) ? max( 1, min( self::MAX_LIST, (int) $request->get_param( 'limit' ) ) ) : self::MAX_LIST;
 
 		foreach ( $data as $key => $item ) {
 			$item_id = is_array( $item ) && isset( $item['id'] ) ? (string) $item['id'] : (string) $key;
@@ -401,11 +403,11 @@ final class WP_MCP_Bridge_Bricks {
 				}
 			}
 			$total++;
-			if ( count( $items ) < self::MAX_LIST ) {
+			if ( $total > $offset && count( $items ) < $limit ) {
 				$items[] = $full ? ( 'theme_styles' === $what && is_array( $item ) ? array_merge( array( 'id' => $key ), $item ) : $item ) : self::summarise( $what, $key, $item );
 			}
 		}
-		return array( 'what' => $what, 'total' => $total, 'returned' => count( $items ), 'full' => $full, 'items' => $items );
+		return array( 'what' => $what, 'total' => $total, 'offset' => $offset, 'returned' => count( $items ), 'full' => $full, 'items' => $items );
 	}
 
 	private static function random_id() {

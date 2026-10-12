@@ -52,18 +52,24 @@ export function registerBricksTools(ctx: Ctx): void {
       element_id: elementId.optional(),
       subtree: z.boolean().optional().describe("With element_id: also return all nested elements in full"),
       full: z.boolean().optional().describe("Return every element with full settings as Bricks stores them"),
+      depth: z.number().int().min(1).optional().describe("Limit the outline to this many levels. Large pages are limited automatically; drill down with element_id"),
     },
     kind: "read",
     bridge: true,
     run: async (wp, a) => {
       const { elements, global_classes, ...meta } = await load(wp, a.id, a.area);
       const info = { ...meta, element_count: elements.length };
+      const fitted = bricks.fittedOutline(elements, global_classes, a.element_id, a.depth);
+      const view = {
+        outline: fitted.nodes,
+        ...(fitted.depth ? { outline_depth: fitted.depth, note: "Outline cut off at this depth; nodes with hidden_descendants have more inside. Call bricks_get with element_id to see inside one." } : {}),
+      };
       if (a.element_id) {
         const nested = bricks.subtree(elements, a.element_id);
-        return { ...info, global_classes, elements: a.subtree ? nested : [nested[0]], outline: bricks.outline(elements, global_classes, a.element_id) };
+        return { ...info, global_classes, elements: a.subtree ? nested : [nested[0]], ...view };
       }
       if (a.full) return { ...info, global_classes, elements };
-      return { ...info, outline: bricks.outline(elements, global_classes) };
+      return { ...info, ...view };
     },
   });
 
@@ -194,16 +200,34 @@ export function registerBricksTools(ctx: Ctx): void {
   defineTool(ctx, {
     name: "bricks_globals_get",
     description:
-      "Read Bricks global data: classes, class_categories, variables, variable_categories, colors (palettes), theme_styles, components, pseudo_classes, breakpoints. Returns a compact list by default (class names without their styles); use search to narrow, id for one item in full, or full: true for full items. At most 500 items per call.",
+      "Read Bricks global data: classes, class_categories, variables, variable_categories, colors (palettes), theme_styles, components, pseudo_classes, breakpoints. Returns a compact list by default (class names without their styles); use search to narrow, id for one item in full, or full: true for full items. Returns 100 items per call; page with offset.",
     schema: {
       what: z.enum(["classes", "class_categories", "variables", "variable_categories", "colors", "theme_styles", "components", "pseudo_classes", "breakpoints"]),
       search: z.string().optional().describe("Match against id, name, label or category"),
       id: z.string().optional(),
       full: z.boolean().optional(),
+      limit: z.number().int().min(1).max(500).optional().describe("Items per call, default 100"),
+      offset: z.number().int().min(0).optional(),
     },
     kind: "read",
     bridge: true,
-    run: async (wp, a) => (await wp.get(`${BRIDGE}/bricks/globals`, a)).data,
+    run: async (wp, a) => {
+      const limit = a.limit ?? 100;
+      const offset = a.offset ?? 0;
+      const res = (await wp.get<{ total: number; offset?: number; items: unknown[] }>(`${BRIDGE}/bricks/globals`, { ...a, limit, offset })).data;
+      // Bridge versions before 0.4.1 ignore limit/offset and return the first 500 matches.
+      const items = res.offset === undefined ? res.items.slice(offset, offset + limit) : res.items;
+      const reachable = res.offset === undefined ? offset < res.items.length || res.total <= res.items.length : true;
+      return {
+        ...res,
+        offset,
+        returned: items.length,
+        items,
+        ...(offset + items.length < res.total
+          ? { note: reachable ? `More items exist: call again with offset ${offset + items.length}, or narrow with search.` : "Narrow with search, or update the bridge plugin to page past the first 500 items." }
+          : {}),
+      };
+    },
   });
 
   defineTool(ctx, {

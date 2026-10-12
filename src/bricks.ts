@@ -27,6 +27,8 @@ export interface OutlineNode {
   text?: string;
   classes?: string[];
   children?: OutlineNode[];
+  /** Set instead of children when the outline was cut off at this depth. */
+  hidden_descendants?: number;
 }
 
 const isRoot = (el: BricksElement) => !el.parent || el.parent === "0";
@@ -95,9 +97,9 @@ function classesOf(settings: Record<string, unknown>, names: Record<string, stri
 }
 
 /** Compact nested view: structure, labels and a text snippet, without settings. */
-export function outline(elements: BricksElement[], classNames: Record<string, string> = {}, rootId?: string): OutlineNode[] {
+export function outline(elements: BricksElement[], classNames: Record<string, string> = {}, rootId?: string, maxDepth = Infinity): OutlineNode[] {
   const map = byId(elements);
-  const build = (el: BricksElement): OutlineNode => {
+  const build = (el: BricksElement, depth = 1): OutlineNode => {
     const node: OutlineNode = { id: el.id, name: el.name };
     if (el.label) node.label = el.label;
     const text = snippet(el.settings);
@@ -105,11 +107,14 @@ export function outline(elements: BricksElement[], classNames: Record<string, st
     const classes = classesOf(el.settings, classNames);
     if (classes) node.classes = classes;
     const children = el.children.map((id) => map.get(id)).filter((c): c is BricksElement => !!c);
-    if (children.length) node.children = children.map(build);
+    if (children.length) {
+      if (depth < maxDepth) node.children = children.map((child) => build(child, depth + 1));
+      else node.hidden_descendants = subtree(elements, el.id).length - 1;
+    }
     return node;
   };
   if (rootId) return [build(need(map, rootId))];
-  return elements.filter(isRoot).map(build);
+  return elements.filter(isRoot).map((el) => build(el));
 }
 
 /** The element and everything nested under it, in document order. */
@@ -217,4 +222,20 @@ export function updateElement(
   }
   if (change.name) el.name = change.name;
   return el;
+}
+
+/**
+ * The deepest outline that fits the size budget. Big pages are cut off at a
+ * depth and each cut node says how many elements it hides. Size is measured
+ * the way tool output is printed (indented), since deep nesting inflates it.
+ */
+export function fittedOutline(elements: BricksElement[], classNames: Record<string, string>, rootId: string | undefined, maxDepth: number | undefined, budget = 60_000) {
+  const depths = maxDepth ? [maxDepth] : [Infinity, 8, 6, 5, 4, 3, 2, 1];
+  for (const depth of depths) {
+    const nodes = outline(elements, classNames, rootId, depth);
+    if (maxDepth || depth === 1 || JSON.stringify({ outline: nodes }, null, 2).length <= budget) {
+      return { nodes, depth: depth === Infinity ? null : depth };
+    }
+  }
+  return { nodes: [], depth: null };
 }

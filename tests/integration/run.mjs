@@ -65,7 +65,7 @@ let r = await call("wp_list_sites");
 check("wp_list_sites", r.ok && r.data.length === 5 && !r.text.includes(password));
 
 r = await call("wp_site_info", t());
-check("wp_site_info sees the bridge", r.ok && r.data.bridge?.bridge_version === "0.4.0" && r.data.authenticated_as?.username === "admin", r.text.slice(0, 300));
+check("wp_site_info sees the bridge", r.ok && r.data.bridge?.bridge_version === "0.4.1" && r.data.authenticated_as?.username === "admin", r.text.slice(0, 300));
 
 r = await call("wp_site_info", { site: "plain" });
 check("plain-permalink routing works", r.ok && Array.isArray(r.data.namespaces), r.text.slice(0, 200));

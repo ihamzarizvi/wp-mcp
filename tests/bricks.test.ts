@@ -54,6 +54,20 @@ describe("outline", () => {
   });
 });
 
+describe("fittedOutline", () => {
+  it("cuts deep trees to fit the budget and says what is hidden", () => {
+    const whole = bricks.fittedOutline(page(), {}, undefined, undefined);
+    expect(whole.depth).toBeNull();
+    const cut = bricks.fittedOutline(page(), {}, undefined, undefined, 150);
+    expect(cut.depth).toBe(1);
+    expect(cut.nodes[0]).toMatchObject({ id: "secaaa", hidden_descendants: 3 });
+    expect(cut.nodes[0].children).toBeUndefined();
+    const asked = bricks.fittedOutline(page(), {}, undefined, 2);
+    expect(asked.depth).toBe(2);
+    expect(asked.nodes[0].children![0]).toMatchObject({ id: "conaaa", hidden_descendants: 2 });
+  });
+});
+
 describe("addElements", () => {
   const spec = [{ name: "container", label: "New", children: [{ name: "heading", settings: { text: "Hi" } }, { name: "button", settings: { text: "Go" } }] }];
   it("adds a nested block inside a parent at a position", () => {
